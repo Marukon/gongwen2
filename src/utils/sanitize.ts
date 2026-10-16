@@ -20,6 +20,26 @@ const PUNCTUATION_MAP: [RegExp, string][] = [
   [/!/g, '\uff01'],          // ! → ！
 ]
 
+/**
+ * 半角双引号成对转中文全角引号（"…" → “…”）。
+ * 全文扫描维持开闭状态，支持跨行引文；只处理半角 "，已有的全角引号保持不变。
+ */
+function convertDoubleQuotes(text: string): { text: string; count: number } {
+  let count = 0
+  let open = false
+  let result = ''
+  for (const char of text) {
+    if (char === '"') {
+      result += open ? '\u201d' : '\u201c'
+      open = !open
+      count++
+    } else {
+      result += char
+    }
+  }
+  return { text: result, count }
+}
+
 export interface SanitizeResult {
   text: string
   /** 总替换次数（标点 + 空白清理） */
@@ -41,10 +61,15 @@ export function sanitizeText(text: string): SanitizeResult {
     })
   }
 
-  // 2. 不间断空格 → 普通空格
+  // 2. 半角双引号成对转中文全角引号
+  const quoted = convertDoubleQuotes(result)
+  result = quoted.text
+  count += quoted.count
+
+  // 3. 不间断空格 → 普通空格
   result = result.replace(/\u00A0/g, () => { count++; return ' ' })
 
-  // 3. 行首尾多余空格 trim（逐行处理）
+  // 4. 行首尾多余空格 trim（逐行处理）
   const trimmed = result.split('\n').map((line) => {
     const t = line.trim()
     if (t !== line) count++
@@ -52,7 +77,7 @@ export function sanitizeText(text: string): SanitizeResult {
   }).join('\n')
   result = trimmed
 
-  // 4. 连续 3+ 空行 → 合并为 1 空行
+  // 5. 连续 3+ 空行 → 合并为 1 空行
   result = result.replace(/\n{3,}/g, () => { count++; return '\n\n' })
 
   return { text: result, count }
